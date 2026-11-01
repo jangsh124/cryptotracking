@@ -1,0 +1,2 @@
+worker.min.js (tesseract.js 5.1.1): init joined language objects by .data instead of .code; patched to .code so language data can be passed in directly.
+lang/*.traineddata.txt: base64 of @tesseract.js-data eng/kor 4.0.0_best_int .traineddata.gz
