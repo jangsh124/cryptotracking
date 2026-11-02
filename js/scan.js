@@ -87,7 +87,7 @@
 
     var rows = {};
     anchors.forEach(function (a, k) {
-      var end = Math.min(lines.length, k + 1 < anchors.length ? anchors[k + 1].i : a.i + 8, a.i + 8);
+      var end = Math.min(lines.length, k + 1 < anchors.length ? anchors[k + 1].i : a.i + 14, a.i + 14);
       var row = { sym: a.sym, qty: null, paid: null, avg: null, note: '' };
       var paidCur = null, avgCur = null;
       for (var i = a.i; i < end; i++) {
@@ -95,6 +95,7 @@
         var lab = labelOf(line);
         var nums = numbersIn(line);
         if (!nums.length && lab && i + 1 < end) { nums = numbersIn(lines[i + 1]); }  // label on one line, number below
+        if (!nums.length && lab && i > a.i) { nums = numbersIn(lines[i - 1]); }      // Upbit style: number above, label below
         if (!nums.length) continue;
         if (lab === 'qty' && row.qty == null) row.qty = nums[0].n;
         else if (lab === 'paid' && row.paid == null) { row.paid = nums[nums.length - 1].n; paidCur = lineCurrency(line) || lineCurrency(lines[i + 1] || ''); }
