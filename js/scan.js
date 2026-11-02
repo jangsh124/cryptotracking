@@ -281,45 +281,71 @@
   }
 
   /* ---------- Cloudflare Worker proxy (site owner's API key, no user setup needed) ---------- */
-  function resizeForWorker(file) {
+  function sliceImageForWorker(file) {
     return new Promise(function (resolve, reject) {
       var url = URL.createObjectURL(file);
       var img = new Image();
       img.onload = function () {
-        var maxW = 1200;
-        var scale = img.width > maxW ? maxW / img.width : 1;
-        var c = document.createElement('canvas');
-        c.width = Math.round(img.width * scale);
-        c.height = Math.round(img.height * scale);
-        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        var maxW = 900, maxSectionH = 1100;
+        var scaleW = img.width > maxW ? maxW / img.width : 1;
+        var scaledW = Math.round(img.width * scaleW);
+        var scaledH = Math.round(img.height * scaleW);
+        var numSections = Math.ceil(scaledH / maxSectionH);
+        var sectionH = Math.ceil(scaledH / numSections);
+        var overlap = Math.round(sectionH * 0.08);
+        var sections = [];
+        for (var i = 0; i < numSections; i++) {
+          var sy = Math.max(0, i * sectionH - overlap);
+          var ey = Math.min(scaledH, (i + 1) * sectionH + overlap);
+          var sh = ey - sy;
+          var c = document.createElement('canvas');
+          c.width = scaledW; c.height = sh;
+          c.getContext('2d').drawImage(img,
+            0, sy / scaleW, img.width, sh / scaleW,
+            0, 0, scaledW, sh);
+          sections.push({ b64: c.toDataURL('image/jpeg', 0.85).split(',')[1], mt: 'image/jpeg' });
+        }
         URL.revokeObjectURL(url);
-        resolve({ b64: c.toDataURL('image/jpeg', 0.88).split(',')[1], mt: 'image/jpeg' });
+        resolve(sections);
       };
       img.onerror = function () { URL.revokeObjectURL(url); reject(new Error('img')); };
       img.src = url;
     });
   }
+  function parseWorkerRows(j, defCurFallback) {
+    var defCur = (j && j.defaultCurrency) || defCurFallback || 'KRW';
+    return ((j && j.rows) || []).map(function (r) {
+      var cur = r.currency || defCur;
+      var q = Number(r.quantity) > 0 ? Number(r.quantity) : null;
+      var paid = Number(r.totalPaid) > 0 ? { value: Number(r.totalPaid), currency: cur } : null;
+      var note = '';
+      if (!paid && Number(r.avgPrice) > 0 && q) { paid = { value: Number(r.avgPrice) * q, currency: cur }; note = 'avg×qty'; }
+      return { sym: String(r.symbol || '').toUpperCase().replace(/[^A-Z0-9]/g, ''), qty: q, paid: paid, note: note };
+    }).filter(function (r) { return r.sym; });
+  }
   function readWithWorker(file, workerUrl) {
-    return resizeForWorker(file).then(function (img) {
-      return fetch(workerUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image: img.b64, mediaType: img.mt })
-      }).then(function (r) {
-        if (!r.ok) return r.json().then(function (e) { throw new Error((e && e.error) || 'worker-' + r.status); });
-        return r.json();
-      }).then(function (j) {
-        var defCur = j.defaultCurrency || 'USD';
-        var rows = ((j && j.rows) || []).map(function (r) {
-          var cur = r.currency || defCur;
-          var q = Number(r.quantity) > 0 ? Number(r.quantity) : null;
-          var paid = Number(r.totalPaid) > 0 ? { value: Number(r.totalPaid), currency: cur } : null;
-          var note = '';
-          if (!paid && Number(r.avgPrice) > 0 && q) { paid = { value: Number(r.avgPrice) * q, currency: cur }; note = 'avg×qty'; }
-          return { sym: String(r.symbol || '').toUpperCase().replace(/[^A-Z0-9]/g, ''), qty: q, paid: paid, note: note };
-        }).filter(function (r) { return r.sym; });
-        return { rows: rows, currency: defCur };
+    return sliceImageForWorker(file).then(function (sections) {
+      return Promise.all(sections.map(function (img) {
+        return fetch(workerUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image: img.b64, mediaType: img.mt })
+        }).then(function (r) {
+          if (!r.ok) return r.json().then(function (e) { throw new Error((e && e.error) || 'worker-' + r.status); });
+          return r.json();
+        });
+      }));
+    }).then(function (results) {
+      var defCur = (results[0] && results[0].defaultCurrency) || 'KRW';
+      var seen = Object.create(null);
+      results.forEach(function (j) {
+        parseWorkerRows(j, defCur).forEach(function (row) {
+          if (!seen[row.sym] || (!seen[row.sym].paid && row.paid) || (!seen[row.sym].qty && row.qty)) {
+            seen[row.sym] = row;
+          }
+        });
       });
+      return { rows: Object.values(seen), currency: defCur };
     });
   }
 

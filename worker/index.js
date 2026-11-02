@@ -1,21 +1,26 @@
 /**
  * Cloudflare Worker — Cloudflare Workers AI proxy for StackMath photo scan.
  * Completely FREE — uses Cloudflare's built-in AI (no external API key needed).
- * Free tier: 10,000 neurons/day
  * Deploy: wrangler deploy
  */
 
 const PROMPT =
-  'This is a crypto exchange or wallet holdings screenshot. Extract ALL coin rows.\n\n' +
+  'This is a Korean crypto exchange (업비트/빗썸/코인원) holdings screenshot. Extract ALL coin rows.\n\n' +
+  'CRITICAL — Korean field labels:\n' +
+  '  보유수량 = quantity held ✓\n' +
+  '  매수금액 = TOTAL amount PAID to buy (USE THIS for totalPaid) ✓\n' +
+  '  매입금액 = same as 매수금액 ✓\n' +
+  '  매수평균가 / 평단가 = average buy price per coin (USE for avgPrice) ✓\n' +
+  '  평가금액 = current market value — DO NOT USE ✗\n' +
+  '  평가손익 / 수익률 = profit/loss — DO NOT USE ✗\n\n' +
   'For each coin row return:\n' +
-  '- symbol: coin ticker (BTC, ETH, XRP, etc.)\n' +
-  '- quantity: amount held (보유수량/수량/balance)\n' +
-  '- totalPaid: TOTAL purchase cost/amount invested. Korean labels: 매수금액, 매입금액, 투자금액, 구매금액, 원금, 총매수금액. English: total cost, cost basis, amount invested, total paid. NEVER use 평가금액(current value) or 손익/수익(profit). Use null if not visible.\n' +
-  '- avgPrice: average buy price per coin. Korean: 매수평균가, 평균단가, 평단가, 평단. English: avg buy price, average cost. Use ONLY when totalPaid is not visible.\n' +
-  '- currency: "KRW" for ₩/원/KRW, "USD" for $, "JPY" for ¥/엔, "CNY" for 위안, else "USD"\n\n' +
-  'Important: totalPaid is what you PAID to buy the coins, not the current value.\n' +
+  '- symbol: coin ticker (BTC, ETH, XRP, USDC, ZETA, etc.)\n' +
+  '- quantity: number next to 보유수량\n' +
+  '- totalPaid: number next to 매수금액 or 매입금액 (NOT 평가금액)\n' +
+  '- avgPrice: number next to 매수평균가 or 평단가 (only if totalPaid not visible)\n' +
+  '- currency: "KRW" for 원/KRW/₩, "USD" for $, else "USD"\n\n' +
   'Use null for fields not visible. Reply with JSON only, no markdown:\n' +
-  '{"defaultCurrency":"KRW","rows":[{"symbol":"BTC","quantity":0.5,"totalPaid":45000000,"avgPrice":null,"currency":"KRW"}]}';
+  '{"defaultCurrency":"KRW","rows":[{"symbol":"BTC","quantity":0.01191111,"totalPaid":1500176,"avgPrice":null,"currency":"KRW"}]}';
 
 export default {
   async fetch(request, env) {
@@ -36,28 +41,45 @@ export default {
       return corsWrap(new Response(JSON.stringify({ error: 'Missing image or mediaType' }), { status: 400, headers: json() }));
     }
 
-    // Decode base64 image to byte array for Cloudflare AI
-    const imageBytes = Array.from(Uint8Array.from(atob(image), c => c.charCodeAt(0)));
+    const allowed = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+    const mt = allowed.includes(mediaType) ? mediaType : 'image/jpeg';
+    const dataUrl = `data:${mt};base64,${image}`;
 
     let aiResult;
     try {
-      aiResult = await env.AI.run('@cf/llava-hf/llava-1.5-7b-hf', {
-        image: imageBytes,
-        prompt: PROMPT,
+      aiResult = await env.AI.run('@cf/meta/llama-3.2-11b-vision-instruct', {
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'image_url', image_url: { url: dataUrl } },
+            { type: 'text', text: PROMPT }
+          ]
+        }],
         max_tokens: 1024,
       });
     } catch (e) {
-      return corsWrap(new Response(JSON.stringify({ error: 'AI error: ' + e.message }), { status: 502, headers: json() }));
+      // Fallback to LLaVA if llama vision not available
+      try {
+        const imageBytes = Array.from(Uint8Array.from(atob(image), c => c.charCodeAt(0)));
+        aiResult = await env.AI.run('@cf/llava-hf/llava-1.5-7b-hf', {
+          image: imageBytes,
+          prompt: PROMPT,
+          max_tokens: 1024,
+        });
+        aiResult = { response: aiResult.description };
+      } catch (e2) {
+        return corsWrap(new Response(JSON.stringify({ error: 'AI error: ' + e2.message }), { status: 502, headers: json() }));
+      }
     }
 
-    const text = (aiResult && aiResult.description) ? aiResult.description : '';
+    const text = (aiResult && aiResult.response) ? aiResult.response : '';
     const match = text.match(/\{[\s\S]*\}/);
     if (!match) {
-      return corsWrap(new Response(JSON.stringify({ rows: [], defaultCurrency: 'USD' }), { headers: json() }));
+      return corsWrap(new Response(JSON.stringify({ rows: [], defaultCurrency: 'KRW' }), { headers: json() }));
     }
 
     try { JSON.parse(match[0]); } catch {
-      return corsWrap(new Response(JSON.stringify({ rows: [], defaultCurrency: 'USD' }), { headers: json() }));
+      return corsWrap(new Response(JSON.stringify({ rows: [], defaultCurrency: 'KRW' }), { headers: json() }));
     }
 
     return corsWrap(new Response(match[0], { headers: json() }));
