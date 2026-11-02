@@ -6,7 +6,7 @@
   function blank() {
     return {
       lots: [], roads: [], pending: [],
-      settings: { cur: null, lang: 'auto', upColor: 'auto', manualRate: null, manualRateTime: null, manualPrices: {}, customIds: {} },
+      settings: { cur: null, lang: 'auto', upColor: 'auto', manualRate: null, manualRateTime: null, manualPrices: {}, customIds: {}, apiKey: '' },
       example: false
     };
   }

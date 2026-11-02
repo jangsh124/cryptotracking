@@ -10,10 +10,10 @@
   /* ---------- text → rows (pure, testable) ---------- */
   var RE_NUM = /[-+]?\d{1,3}(?:,\d{3})+(?:\.\d+)?(?!\d)|[-+]?\d{1,3}(?:\.\d{3}){2,}(?![\d.])|[-+]?\d*\.\d+|[-+]?\d+/g;
   var LBL = {
-    value: /평가\s*금액|평가\s*손익|평가|손익|수익률|market\s*value|current\s*value|value|profit|p\s*\/\s*l|pnl|return|change/i,
-    avg: /매수\s*평균가|평균\s*단가|평균|평단|avg|average|entry\s*price|unit\s*cost|cost\s*per/i,
-    paid: /매수\s*금액|매입\s*금액|투자\s*금액|원금|total\s*cost|cost\s*basis|invested|total\s*paid|amount\s*paid|paid|cost/i,
-    qty: /보유\s*수량|보유량|수량|quantity|qty|balance|holdings?|amount/i
+    value: /평가\s*금액|평가\s*손익|평가|손익|수익률|市值|現在価値|当前\s*价值|时价|market\s*value|current\s*value|portfolio\s*value|value|profit|p\s*\/\s*l|pnl|return|change/i,
+    avg: /매수\s*평균가|평균\s*단가|평균|평단|买入\s*均价|平均\s*取得\s*価格|取得\s*単価|平均\s*成本|avg\.?\s*buy|average\s*buy|avg\.?\s*price|avg\.?\s*cost|average\s*cost|avg|average|entry\s*price|unit\s*cost|cost\s*per|break[\s-]*even/i,
+    paid: /매수\s*금액|매입\s*금액|투자\s*금액|구매\s*금액|원금|持仓\s*成本|买入\s*金额|投入\s*金额|投入|購入\s*金額|取得\s*金額|total\s*cost|cost\s*basis|total\s*invested|amount\s*invested|net\s*cost|book\s*value|invested|total\s*paid|amount\s*paid|paid|cost/i,
+    qty: /보유\s*수량|보유량|수량|保有\s*数量|持仓\s*数量|保有量|quantity|qty|balance|holdings?|amount/i
   };
   var STOP = { KRW: 1, USD: 1, USDC: 0, BUY: 1, SELL: 1, ALL: 1, MAX: 1, TOTAL: 1, AVG: 1, PNL: 1, ROI: 1 };
 
@@ -42,6 +42,8 @@
   function lineCurrency(line) {
     if (/₩|원|KRW|\bW\s?\d/i.test(line)) return 'KRW';
     if (/\$|USD|USDT/i.test(line)) return 'USD';
+    if (/¥|円|JPY/i.test(line)) return 'JPY';
+    if (/元|人民币|CNY|RMB/i.test(line)) return 'CNY';
     return null;
   }
 
@@ -226,8 +228,94 @@
     });
   }
 
+  /* ---------- direct Anthropic API (user's own key, stored in localStorage) ---------- */
+  function readWithAnthropicAPI(file, apiKey) {
+    return new Promise(function (resolve, reject) {
+      var reader = new FileReader();
+      reader.onload = function (e) {
+        var b64 = e.target.result.split(',')[1];
+        var mt = (file.type || 'image/jpeg');
+        if (['image/jpeg', 'image/png', 'image/gif', 'image/webp'].indexOf(mt) === -1) mt = 'image/jpeg';
+        var prompt = 'This is a crypto wallet or exchange holdings screenshot. ' +
+          'Extract every coin row visible. For each return: ' +
+          'symbol (ticker like BTC), quantity (decimal), ' +
+          'totalPaid (TOTAL purchase cost/cost basis/invested — NOT current value or profit), ' +
+          'avgPrice (avg buy price per coin if totalPaid not shown), ' +
+          'currency ("KRW" for ₩/원/KRW, "USD" for $, "JPY" for ¥, else "USD"). ' +
+          'Works in any language (Korean, English, Japanese, Chinese, etc.). ' +
+          'Use null for unseen fields. ' +
+          'Reply with JSON only: {"defaultCurrency":"KRW","rows":[{"symbol":"BTC","quantity":0.5,"totalPaid":45000000,"avgPrice":null,"currency":"KRW"}]}';
+        fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+          body: JSON.stringify({
+            model: 'claude-haiku-4-5', max_tokens: 1024,
+            messages: [{ role: 'user', content: [
+              { type: 'image', source: { type: 'base64', media_type: mt, data: b64 } },
+              { type: 'text', text: prompt }
+            ]}]
+          })
+        }).then(function (r) {
+          if (!r.ok) return r.json().then(function (e) { throw new Error((e.error && e.error.message) || 'api-' + r.status); });
+          return r.json();
+        }).then(function (data) {
+          var text = (data.content && data.content[0] && data.content[0].text) || '';
+          var m = text.match(/\{[\s\S]*\}/);
+          if (!m) throw new Error('no-json');
+          var j = JSON.parse(m[0]);
+          var defCur = j.defaultCurrency || 'USD';
+          var rows = ((j && j.rows) || []).map(function (r) {
+            var cur = r.currency || defCur;
+            var q = Number(r.quantity) > 0 ? Number(r.quantity) : null;
+            var paid = Number(r.totalPaid) > 0 ? { value: Number(r.totalPaid), currency: cur } : null;
+            var note = '';
+            if (!paid && Number(r.avgPrice) > 0 && q) { paid = { value: Number(r.avgPrice) * q, currency: cur }; note = 'avg×qty'; }
+            return { sym: String(r.symbol || '').toUpperCase().replace(/[^A-Z0-9]/g, ''), qty: q, paid: paid, note: note };
+          }).filter(function (r) { return r.sym; });
+          resolve({ rows: rows, currency: defCur });
+        }).catch(reject);
+      };
+      reader.onerror = function () { reject(new Error('file-read')); };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  /* ---------- Cloudflare Worker proxy (site owner's API key, no user setup needed) ---------- */
+  function readWithWorker(file, workerUrl) {
+    return new Promise(function (resolve, reject) {
+      var reader = new FileReader();
+      reader.onload = function (e) {
+        var b64 = e.target.result.split(',')[1];
+        var mt = (file.type || 'image/jpeg');
+        if (['image/jpeg', 'image/png', 'image/gif', 'image/webp'].indexOf(mt) === -1) mt = 'image/jpeg';
+        fetch(workerUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image: b64, mediaType: mt })
+        }).then(function (r) {
+          if (!r.ok) return r.json().then(function (e) { throw new Error((e && e.error) || 'worker-' + r.status); });
+          return r.json();
+        }).then(function (j) {
+          var defCur = j.defaultCurrency || 'USD';
+          var rows = ((j && j.rows) || []).map(function (r) {
+            var cur = r.currency || defCur;
+            var q = Number(r.quantity) > 0 ? Number(r.quantity) : null;
+            var paid = Number(r.totalPaid) > 0 ? { value: Number(r.totalPaid), currency: cur } : null;
+            var note = '';
+            if (!paid && Number(r.avgPrice) > 0 && q) { paid = { value: Number(r.avgPrice) * q, currency: cur }; note = 'avg×qty'; }
+            return { sym: String(r.symbol || '').toUpperCase().replace(/[^A-Z0-9]/g, ''), qty: q, paid: paid, note: note };
+          }).filter(function (r) { return r.sym; });
+          resolve({ rows: rows, currency: defCur });
+        }).catch(reject);
+      };
+      reader.onerror = function () { reject(new Error('file-read')); };
+      reader.readAsDataURL(file);
+    });
+  }
+
   var api = { parseHoldings: parseHoldings, numbersIn: numbersIn, toNumber: toNumber,
-              readWithOCR: readWithOCR, readWithClaude: readWithClaude, claudeReader: claudeReader };
+              readWithOCR: readWithOCR, readWithClaude: readWithClaude, claudeReader: claudeReader,
+              readWithAnthropicAPI: readWithAnthropicAPI, readWithWorker: readWithWorker };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.Scan = api;
 })(this);

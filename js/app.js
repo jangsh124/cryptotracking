@@ -399,6 +399,11 @@
         return '<button class="lot" style="border:0;text-align:left" data-act="price" data-sym="' + esc(s) + '"><div><b>' + esc(s) + '</b> ' + srcTag((m.prices[s] || {}).source || 'none') + '</div><div>' + (p != null ? money(p, c) : '—') + ' ' + IC.edit + '</div></button>';
       }).join('') +
       '<button class="btn ghost block" id="sRefresh">' + t('refresh') + '</button></div>' +
+      '<div class="set-group"><h3>' + t('apiKey') + '</h3>' +
+      '<div class="muted" style="font-size:13px;margin-bottom:8px">' + t('apiKeyNote') + '</div>' +
+      (S.settings.apiKey ? '<div class="small" style="color:var(--up);margin-bottom:6px">' + t('apiKeySet') + '</div>' : '') +
+      '<div class="inrow"><input class="input" id="sApiKey" type="password" placeholder="sk-ant-..." value="' + esc(S.settings.apiKey || '') + '"><button class="btn ghost" id="sApiSave">' + t('save') + '</button></div>' +
+      (S.settings.apiKey ? '<button class="btn ghost block" id="sApiClear">' + t('apiKeyClear') + '</button>' : '') + '</div>' +
       '<div class="set-group"><h3>' + t('backup') + '</h3><button class="btn ghost block" id="sCopy">' + t('copy') + '</button>' +
       '<textarea class="input" id="sBackup" placeholder="' + t('restorePh') + '"></textarea><button class="btn ghost block" id="sRestore">' + t('restore') + '</button></div>' +
       '<div class="small">' + t('privacy') + '</div>' +
@@ -428,6 +433,12 @@
           save(); closeSheet(); render(); toast(t('saved'));
         } catch (err) { $('#sBackup', sh).classList.add('err'); }
       };
+      $('#sApiSave', sh).onclick = function () {
+        var v = $('#sApiKey', sh).value.trim();
+        S.settings.apiKey = v; save(); toast(t('apiKeySaved')); render(); settingsSheet();
+      };
+      var apiClr = $('#sApiClear', sh);
+      if (apiClr) apiClr.onclick = function () { S.settings.apiKey = ''; save(); render(); settingsSheet(); };
       $('#sWipe', sh).onclick = function (e) {
         twoTap(e.currentTarget, t('wipeSure'), function () { S = Store.blank(); save(); closeSheet(); render(); });
       };
@@ -444,10 +455,18 @@
     var f = e.target.files && e.target.files[0]; if (!f) return;
     ui.scanFile = f; ui.scanStatus = 'reading'; ui.scanProgress = 0; ui.scanMsg = ''; ui.scanText = '';
     render();
-    Scan.readWithOCR(f, function (status, p) {
+    var workerUrl = (typeof STACKMATH_WORKER !== 'undefined' && STACKMATH_WORKER) ? STACKMATH_WORKER : null;
+    var apiKey = S.settings.apiKey;
+    var ocrRead = Scan.readWithOCR.bind(Scan, f, function (status, p) {
       ui.scanProgress = /recogn/i.test(status) ? 0.4 + p * 0.6 : Math.min(0.4, p * 0.4);
       var b = document.querySelector('.bar i'); if (b) b.style.width = Math.round(ui.scanProgress * 100) + '%';
-    }).then(function (res) {
+    });
+    var readPromise = workerUrl
+      ? Scan.readWithWorker(f, workerUrl).catch(function () { return ocrRead(); })
+      : apiKey
+        ? Scan.readWithAnthropicAPI(f, apiKey).catch(function () { return ocrRead(); })
+        : ocrRead();
+    readPromise.then(function (res) {
       ui.scanText = res.text || '';
       S.pending = toPending(res.rows, res.currency);
       if (!S.pending.length) { ui.scanMsg = t('nothing'); S.pending = [{ sym: '', qty: '', paidValue: '', paidCur: res.currency || cur(), note: '' }]; }
@@ -506,10 +525,15 @@
       case 'discardScan': S.pending = []; ui.scanStatus = 'idle'; ui.scanFile = null; ui.scanText = ''; ui.scanMsg = ''; save(); render(); break;
       case 'claudeRead':
         a.disabled = true; a.textContent = t('reading');
-        Scan.readWithClaude(ui.scanFile).then(function (res) {
+        (function () {
+          var wUrl = (typeof STACKMATH_WORKER !== 'undefined' && STACKMATH_WORKER) ? STACKMATH_WORKER : null;
+          if (wUrl) return Scan.readWithWorker(ui.scanFile, wUrl);
+          if (S.settings.apiKey) return Scan.readWithAnthropicAPI(ui.scanFile, S.settings.apiKey);
+          return Scan.readWithClaude(ui.scanFile);
+        })().then(function (res) {
           if (res.rows.length) { S.pending = toPending(res.rows); ui.scanMsg = ''; }
           save(); render(); refreshLive();
-        }, function () { a.disabled = false; a.textContent = t('readAgainClaude'); });
+        }, function () { a.disabled = false; a.textContent = S.settings.apiKey ? t('readWithApi') : t('readAgainClaude'); });
         break;
     }
   });

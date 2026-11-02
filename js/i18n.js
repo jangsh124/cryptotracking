@@ -31,7 +31,8 @@
       restorePh: 'Paste backup here', wipe: 'Delete all my data', wipeSure: 'Tap again — this cannot be undone',
       privacy: 'Your data stays in this browser on this device. Nobody else can see it. No sign-up.',
       math: 'Math only. No buy or sell advice.', perUsd: 'per $1', coinsHeld: 'Your coins', enterPrice: 'Price per coin',
-      required: 'Fill the coin, quantity and amount.', close: 'Close', mixedCur: '$ and ₩ lots combined'
+      required: 'Fill the coin, quantity and amount.', close: 'Close', mixedCur: '$ and ₩ lots combined',
+      apiKey: 'Claude API key', apiKeyNote: 'Optional. Enter your Anthropic API key for accurate photo reading in any language (Korean, English, Japanese, Chinese…).', apiKeySaved: 'Key saved', apiKeyClear: 'Remove key', apiKeySet: 'Claude API key set ✓', readWithApi: 'Read with Claude API'
     },
     ko: {
       avg: '평균단가', road: '적립 로드', photo: '사진',
@@ -63,7 +64,8 @@
       restorePh: '백업을 여기에 붙여넣기', wipe: '내 데이터 모두 삭제', wipeSure: '한 번 더 — 되돌릴 수 없습니다',
       privacy: '데이터는 이 기기의 브라우저에만 저장됩니다. 다른 사람은 볼 수 없습니다. 가입 없음.',
       math: '계산만 보여줍니다. 매수·매도 조언 없음.', perUsd: '/ $1', coinsHeld: '내 코인', enterPrice: '개당 가격',
-      required: '코인, 수량, 금액을 입력하세요.', close: '닫기', mixedCur: '$·₩ 기록 합산'
+      required: '코인, 수량, 금액을 입력하세요.', close: '닫기', mixedCur: '$·₩ 기록 합산',
+      apiKey: 'Claude API 키', apiKeyNote: '선택사항. Anthropic API 키를 입력하면 한국어·영어·일본어·중국어 등 어떤 언어 화면이든 정확하게 읽습니다.', apiKeySaved: '키 저장됨', apiKeyClear: '키 삭제', apiKeySet: 'Claude API 키 설정됨 ✓', readWithApi: 'Claude API로 읽기'
     }
   };
   var lang = 'en';
