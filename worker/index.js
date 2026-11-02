@@ -1,8 +1,8 @@
 /**
- * Cloudflare Worker — Google Gemini API proxy for StackMath photo scan.
- * Free tier: 1,500 requests/day, no credit card needed.
+ * Cloudflare Worker — Cloudflare Workers AI proxy for StackMath photo scan.
+ * Completely FREE — uses Cloudflare's built-in AI (no external API key needed).
+ * Free tier: 10,000 neurons/day
  * Deploy: wrangler deploy
- * Set secret: echo "YOUR_KEY" | wrangler secret put GEMINI_API_KEY
  */
 
 const PROMPT =
@@ -16,8 +16,6 @@ const PROMPT =
   'Important: totalPaid is what you PAID to buy the coins, not the current value.\n' +
   'Use null for fields not visible. Reply with JSON only, no markdown:\n' +
   '{"defaultCurrency":"KRW","rows":[{"symbol":"BTC","quantity":0.5,"totalPaid":45000000,"avgPrice":null,"currency":"KRW"}]}';
-
-const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent';
 
 export default {
   async fetch(request, env) {
@@ -38,37 +36,21 @@ export default {
       return corsWrap(new Response(JSON.stringify({ error: 'Missing image or mediaType' }), { status: 400, headers: json() }));
     }
 
-    const allowed = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
-    const mt = allowed.includes(mediaType) ? mediaType : 'image/jpeg';
+    // Decode base64 image to byte array for Cloudflare AI
+    const imageBytes = Array.from(Uint8Array.from(atob(image), c => c.charCodeAt(0)));
 
-    let res;
+    let aiResult;
     try {
-      res = await fetch(`${GEMINI_URL}?key=${env.GEMINI_API_KEY}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{
-            parts: [
-              { inline_data: { mime_type: mt, data: image } },
-              { text: PROMPT }
-            ]
-          }],
-          generationConfig: { maxOutputTokens: 1024, temperature: 0 }
-        })
+      aiResult = await env.AI.run('@cf/llava-hf/llava-1.5-7b-hf', {
+        image: imageBytes,
+        prompt: PROMPT,
+        max_tokens: 1024,
       });
     } catch (e) {
-      return corsWrap(new Response(JSON.stringify({ error: 'Upstream error' }), { status: 502, headers: json() }));
+      return corsWrap(new Response(JSON.stringify({ error: 'AI error: ' + e.message }), { status: 502, headers: json() }));
     }
 
-    const data = await res.json();
-    if (!res.ok) {
-      const msg = data.error && data.error.message ? data.error.message : 'API error';
-      return corsWrap(new Response(JSON.stringify({ error: msg }), { status: res.status, headers: json() }));
-    }
-
-    const text = (data.candidates && data.candidates[0] &&
-                  data.candidates[0].content && data.candidates[0].content.parts &&
-                  data.candidates[0].content.parts[0] && data.candidates[0].content.parts[0].text) || '';
+    const text = (aiResult && aiResult.description) ? aiResult.description : '';
     const match = text.match(/\{[\s\S]*\}/);
     if (!match) {
       return corsWrap(new Response(JSON.stringify({ rows: [], defaultCurrency: 'USD' }), { headers: json() }));
