@@ -462,7 +462,26 @@
       var b = document.querySelector('.bar i'); if (b) b.style.width = Math.round(ui.scanProgress * 100) + '%';
     });
     var readPromise = workerUrl
-      ? Scan.readWithWorker(f, workerUrl).catch(function () { return ocrRead(); })
+      ? Scan.readWithWorker(f, workerUrl).then(function (workerRes) {
+          // Worker found symbols/qty but no paid amounts → supplement with Tesseract
+          var hasPaid = workerRes.rows && workerRes.rows.some(function (r) { return r.paid; });
+          if (!hasPaid && workerRes.rows && workerRes.rows.length) {
+            return ocrRead().then(function (ocrRes) {
+              var ocrMap = Object.create(null);
+              (ocrRes.rows || []).forEach(function (r) { if (r.sym) ocrMap[r.sym] = r; });
+              workerRes.rows.forEach(function (r) {
+                var o = ocrMap[r.sym];
+                if (!r.paid && o) {
+                  if (o.paid) r.paid = o.paid;
+                  else if (o.avg != null && r.qty != null) r.paid = { value: o.avg * r.qty, currency: workerRes.currency || 'KRW' };
+                }
+                if (r.qty == null && o && o.qty != null) r.qty = o.qty;
+              });
+              return workerRes;
+            }).catch(function () { return workerRes; });
+          }
+          return workerRes;
+        }).catch(function () { return ocrRead(); })
       : apiKey
         ? Scan.readWithAnthropicAPI(f, apiKey).catch(function () { return ocrRead(); })
         : ocrRead();
