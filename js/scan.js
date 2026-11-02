@@ -214,7 +214,9 @@
     return Promise.all([prepareImage(file), getWorker(onProgress)]).then(function (r) {
       return r[1].recognize(r[0]).then(function (res) {
         var text = res.data.text;
+        console.log('[StackMath OCR raw text]\n' + text);
         var parsed = parseHoldings(text);
+        console.log('[StackMath OCR parsed rows]', JSON.stringify(parsed.rows));
         parsed.text = text;
         return parsed;
       });
