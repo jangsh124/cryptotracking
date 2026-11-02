@@ -97,9 +97,35 @@
         if (!nums.length && lab && i + 1 < end) { nums = numbersIn(lines[i + 1]); }  // label on one line, number below
         if (!nums.length && lab && i > a.i) { nums = numbersIn(lines[i - 1]); }      // Upbit style: number above, label below
         if (!nums.length) continue;
-        if (lab === 'qty' && row.qty == null) row.qty = nums[0].n;
+        // Upbit: "평가금액 매수금액" on one line (both labels together)
+        // The numbers are on the PREVIOUS line — take the rightmost as paid
+        if (LBL.value.test(line) && LBL.paid.test(line)) {
+          if (row.paid == null && i > a.i) {
+            var prevN = numbersIn(lines[i - 1]);
+            if (prevN.length >= 2) {
+              var prevCur = lineCurrency(lines[i - 1]) || defaultCur;
+              row.paid = { value: prevN[prevN.length - 1].n, currency: prevCur };
+            }
+          }
+          continue;
+        }
+        if (lab === 'qty' && row.qty == null) {
+          // Only use next-line numbers if they look like a coin quantity (not a fiat amount)
+          var qtyCand = nums.length ? nums[0].n : (i + 1 < end ? (numbersIn(lines[i + 1])[0] || {}).n : null);
+          // Upbit puts 평가금액 & 매수금액 on the next line when 보유수량 has no numbers
+          // Skip using that line's numbers as qty — qty is on the symbol line
+          if (qtyCand != null && qtyCand < 100000000) row.qty = qtyCand;
+        }
         else if (lab === 'paid' && row.paid == null) { row.paid = nums[nums.length - 1].n; paidCur = lineCurrency(line) || lineCurrency(lines[i + 1] || ''); }
-        else if (lab === 'avg' && row.avg == null) { row.avg = nums[nums.length - 1].n; avgCur = lineCurrency(line) || lineCurrency(lines[i + 1] || ''); }
+        else if (lab === 'avg' && row.avg == null) {
+          row.avg = nums[nums.length - 1].n; avgCur = lineCurrency(line) || lineCurrency(lines[i + 1] || '');
+          // Upbit: "0.01191111 BTC 매수평균가 125,947,579 KRW" — qty is on the same line before the symbol
+          if (row.qty == null) {
+            var reQ = new RegExp('([\\d.,]+)\\s*' + a.sym + '\\b|\\b' + a.sym + '\\s+([\\d.,]+)');
+            var mQ = line.match(reQ);
+            if (mQ) row.qty = toNumber(mQ[1] || mQ[2]);
+          }
+        }
         else if (!lab && row.qty == null) {
           // "0.5 BTC" or "BTC 0.5": a number right next to the symbol is the quantity
           var re = new RegExp('([\\d.,]+)\\s*' + a.sym + '\\b|\\b' + a.sym + '\\s+([\\d.,]+)');
