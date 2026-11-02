@@ -6,15 +6,15 @@
  */
 
 const PROMPT =
-  'This is a crypto wallet or exchange holdings screenshot. ' +
-  'Extract ALL visible coin rows. For each row return: ' +
-  'symbol (ticker like BTC), quantity (decimal amount held), ' +
-  'totalPaid (TOTAL purchase cost / cost basis / invested — NOT current value, NOT profit/loss), ' +
-  'avgPrice (average buy price per coin — only when totalPaid is NOT shown), ' +
-  'currency ("KRW" for ₩/원/KRW amounts, "USD" for $, "JPY" for ¥/円/JPY, "CNY" for 元/CNY/RMB, else "USD"). ' +
-  'Works in any language (Korean, English, Japanese, Chinese, etc.). ' +
-  'Use null for any field not visible in the screenshot. ' +
-  'Reply with JSON only, no markdown: ' +
+  'This is a crypto exchange or wallet holdings screenshot. Extract ALL coin rows.\n\n' +
+  'For each coin row return:\n' +
+  '- symbol: coin ticker (BTC, ETH, XRP, etc.)\n' +
+  '- quantity: amount held (보유수량/수량/balance)\n' +
+  '- totalPaid: TOTAL purchase cost/amount invested. Korean labels: 매수금액, 매입금액, 투자금액, 구매금액, 원금, 총매수금액. English: total cost, cost basis, amount invested, total paid. NEVER use 평가금액(current value) or 손익/수익(profit). Use null if not visible.\n' +
+  '- avgPrice: average buy price per coin. Korean: 매수평균가, 평균단가, 평단가, 평단. English: avg buy price, average cost. Use ONLY when totalPaid is not visible.\n' +
+  '- currency: "KRW" for ₩/원/KRW, "USD" for $, "JPY" for ¥/엔, "CNY" for 위안, else "USD"\n\n' +
+  'Important: totalPaid is what you PAID to buy the coins, not the current value.\n' +
+  'Use null for fields not visible. Reply with JSON only, no markdown:\n' +
   '{"defaultCurrency":"KRW","rows":[{"symbol":"BTC","quantity":0.5,"totalPaid":45000000,"avgPrice":null,"currency":"KRW"}]}';
 
 const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent';
