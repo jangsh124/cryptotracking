@@ -281,35 +281,45 @@
   }
 
   /* ---------- Cloudflare Worker proxy (site owner's API key, no user setup needed) ---------- */
-  function readWithWorker(file, workerUrl) {
+  function resizeForWorker(file) {
     return new Promise(function (resolve, reject) {
-      var reader = new FileReader();
-      reader.onload = function (e) {
-        var b64 = e.target.result.split(',')[1];
-        var mt = (file.type || 'image/jpeg');
-        if (['image/jpeg', 'image/png', 'image/gif', 'image/webp'].indexOf(mt) === -1) mt = 'image/jpeg';
-        fetch(workerUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ image: b64, mediaType: mt })
-        }).then(function (r) {
-          if (!r.ok) return r.json().then(function (e) { throw new Error((e && e.error) || 'worker-' + r.status); });
-          return r.json();
-        }).then(function (j) {
-          var defCur = j.defaultCurrency || 'USD';
-          var rows = ((j && j.rows) || []).map(function (r) {
-            var cur = r.currency || defCur;
-            var q = Number(r.quantity) > 0 ? Number(r.quantity) : null;
-            var paid = Number(r.totalPaid) > 0 ? { value: Number(r.totalPaid), currency: cur } : null;
-            var note = '';
-            if (!paid && Number(r.avgPrice) > 0 && q) { paid = { value: Number(r.avgPrice) * q, currency: cur }; note = 'avg×qty'; }
-            return { sym: String(r.symbol || '').toUpperCase().replace(/[^A-Z0-9]/g, ''), qty: q, paid: paid, note: note };
-          }).filter(function (r) { return r.sym; });
-          resolve({ rows: rows, currency: defCur });
-        }).catch(reject);
+      var url = URL.createObjectURL(file);
+      var img = new Image();
+      img.onload = function () {
+        var maxW = 1200;
+        var scale = img.width > maxW ? maxW / img.width : 1;
+        var c = document.createElement('canvas');
+        c.width = Math.round(img.width * scale);
+        c.height = Math.round(img.height * scale);
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        URL.revokeObjectURL(url);
+        resolve({ b64: c.toDataURL('image/jpeg', 0.88).split(',')[1], mt: 'image/jpeg' });
       };
-      reader.onerror = function () { reject(new Error('file-read')); };
-      reader.readAsDataURL(file);
+      img.onerror = function () { URL.revokeObjectURL(url); reject(new Error('img')); };
+      img.src = url;
+    });
+  }
+  function readWithWorker(file, workerUrl) {
+    return resizeForWorker(file).then(function (img) {
+      return fetch(workerUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: img.b64, mediaType: img.mt })
+      }).then(function (r) {
+        if (!r.ok) return r.json().then(function (e) { throw new Error((e && e.error) || 'worker-' + r.status); });
+        return r.json();
+      }).then(function (j) {
+        var defCur = j.defaultCurrency || 'USD';
+        var rows = ((j && j.rows) || []).map(function (r) {
+          var cur = r.currency || defCur;
+          var q = Number(r.quantity) > 0 ? Number(r.quantity) : null;
+          var paid = Number(r.totalPaid) > 0 ? { value: Number(r.totalPaid), currency: cur } : null;
+          var note = '';
+          if (!paid && Number(r.avgPrice) > 0 && q) { paid = { value: Number(r.avgPrice) * q, currency: cur }; note = 'avg×qty'; }
+          return { sym: String(r.symbol || '').toUpperCase().replace(/[^A-Z0-9]/g, ''), qty: q, paid: paid, note: note };
+        }).filter(function (r) { return r.sym; });
+        return { rows: rows, currency: defCur };
+      });
     });
   }
 
