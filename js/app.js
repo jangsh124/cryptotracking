@@ -469,13 +469,20 @@
             return ocrRead().then(function (ocrRes) {
               var ocrMap = Object.create(null);
               (ocrRes.rows || []).forEach(function (r) { if (r.sym) ocrMap[r.sym] = r; });
+              // Fill missing paid/qty in worker rows from OCR
+              var workerSyms = Object.create(null);
               workerRes.rows.forEach(function (r) {
+                workerSyms[r.sym] = true;
                 var o = ocrMap[r.sym];
                 if (!r.paid && o) {
                   if (o.paid) r.paid = o.paid;
                   else if (o.avg != null && r.qty != null) r.paid = { value: o.avg * r.qty, currency: workerRes.currency || 'KRW' };
                 }
                 if (r.qty == null && o && o.qty != null) r.qty = o.qty;
+              });
+              // Add coins OCR found that worker missed entirely
+              (ocrRes.rows || []).forEach(function (r) {
+                if (r.sym && !workerSyms[r.sym]) workerRes.rows.push(r);
               });
               return workerRes;
             }).catch(function () { return workerRes; });
