@@ -484,8 +484,9 @@
               (ocrRes.rows || []).forEach(function (r) {
                 if (r.sym && !workerSyms[r.sym]) workerRes.rows.push(r);
               });
+              workerRes.text = ocrRes.text || '';  // show OCR text in UI for debugging
               return workerRes;
-            }).catch(function () { return workerRes; });
+            }).catch(function (e) { console.error('[StackMath OCR error]', e); return workerRes; });
           }
           return workerRes;
         }).catch(function () { return ocrRead(); })
