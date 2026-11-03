@@ -14,6 +14,11 @@ let fails = 0; const check = (n, ok, info) => { console.log((ok ? '  ok   ' : ' 
   await sp.goto('file://' + path.join(__dirname, 'fake_holdings.html')); await sp.screenshot({ path: out('holdings.png'), fullPage: true });
   const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, locale: 'en-US' });
   const pg = await ctx.newPage(); pg.on('pageerror', e => console.log('PAGEERROR', e.message));
+  // Exercise the empty AI response fallback without relying on live services.
+  await pg.route('https://stackmath-scan.deltajang.workers.dev/**', route => route.fulfill({ json: { rows: [], defaultCurrency: 'KRW' } }));
+  for (const host of ['api.coingecko.com', 'open.er-api.com', 'api.frankfurter.app']) {
+    await pg.route('https://' + host + '/**', route => route.abort());
+  }
   await pg.goto('http://localhost:8765/'); await pg.waitForTimeout(2500);
   await pg.screenshot({ path: out('1-example.png') });
   check('rate warning shown when live fails', await pg.locator('#rateLine.bad').count() === 1, (await pg.locator('#rateLine').innerText()).slice(0, 90));

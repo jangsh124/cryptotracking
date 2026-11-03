@@ -463,9 +463,10 @@
     });
     var readPromise = workerUrl
       ? Scan.readWithWorker(f, workerUrl).then(function (workerRes) {
-          // Worker found symbols/qty but no paid amounts → supplement with Tesseract
-          var hasPaid = workerRes.rows && workerRes.rows.some(function (r) { return r.paid; });
-          if (!hasPaid && workerRes.rows && workerRes.rows.length) {
+          // Empty or incomplete AI extraction → supplement with on-device OCR
+          if (!workerRes.rows || !workerRes.rows.length) return ocrRead();
+          var needsOCR = workerRes.rows.some(function (r) { return !r.paid || r.qty == null; });
+          if (needsOCR) {
             return ocrRead().then(function (ocrRes) {
               var ocrMap = Object.create(null);
               (ocrRes.rows || []).forEach(function (r) { if (r.sym) ocrMap[r.sym] = r; });
@@ -474,11 +475,11 @@
               workerRes.rows.forEach(function (r) {
                 workerSyms[r.sym] = true;
                 var o = ocrMap[r.sym];
+                if (r.qty == null && o && o.qty != null) r.qty = o.qty;
                 if (!r.paid && o) {
                   if (o.paid) r.paid = o.paid;
                   else if (o.avg != null && r.qty != null) r.paid = { value: o.avg * r.qty, currency: workerRes.currency || 'KRW' };
                 }
-                if (r.qty == null && o && o.qty != null) r.qty = o.qty;
               });
               // Add coins OCR found that worker missed entirely
               (ocrRes.rows || []).forEach(function (r) {

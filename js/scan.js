@@ -83,7 +83,10 @@
     var defaultCur = krw > usd ? 'KRW' : 'USD';
 
     var anchors = [];
-    lines.forEach(function (l, i) { var s = findCoin(l); if (s) anchors.push({ i: i, sym: s }); });
+    lines.forEach(function (l, i) {
+      var s = findCoin(l);
+      if (s && (!anchors.length || anchors[anchors.length - 1].sym !== s)) anchors.push({ i: i, sym: s });
+    });
 
     var rows = {};
     anchors.forEach(function (a, k) {
@@ -94,8 +97,9 @@
         var line = lines[i];
         var lab = labelOf(line);
         var nums = numbersIn(line);
-        if (!nums.length && lab && i + 1 < end) { nums = numbersIn(lines[i + 1]); }  // label on one line, number below
-        if (!nums.length && lab && i > a.i) { nums = numbersIn(lines[i - 1]); }      // Upbit style: number above, label below
+        var numberLine = line;
+        if (!nums.length && lab && i + 1 < end && !labelOf(lines[i + 1])) { numberLine = lines[i + 1]; nums = numbersIn(numberLine); }  // label on one line, number below
+        if (!nums.length && lab && i > a.i && !labelOf(lines[i - 1])) { numberLine = lines[i - 1]; nums = numbersIn(numberLine); }      // Upbit style: number above, label below
         if (!nums.length) continue;
         // Upbit: "평가금액 매수금액" on one line (both labels together)
         // The numbers are on the PREVIOUS line — take the rightmost as paid
@@ -104,7 +108,7 @@
             var prevN = numbersIn(lines[i - 1]);
             if (prevN.length >= 2) {
               var prevCur = lineCurrency(lines[i - 1]) || defaultCur;
-              row.paid = { value: prevN[prevN.length - 1].n, currency: prevCur };
+              row.paid = prevN[prevN.length - 1].n; paidCur = prevCur;
             }
           }
           continue;
@@ -114,11 +118,11 @@
           var qtyCand = nums.length ? nums[0].n : (i + 1 < end ? (numbersIn(lines[i + 1])[0] || {}).n : null);
           // Upbit puts 평가금액 & 매수금액 on the next line when 보유수량 has no numbers
           // Skip using that line's numbers as qty — qty is on the symbol line
-          if (qtyCand != null && qtyCand < 100000000) row.qty = qtyCand;
+          if (qtyCand != null && !lineCurrency(numberLine)) row.qty = qtyCand;
         }
-        else if (lab === 'paid' && row.paid == null) { row.paid = nums[nums.length - 1].n; paidCur = lineCurrency(line) || lineCurrency(lines[i + 1] || ''); }
+        else if (lab === 'paid' && row.paid == null) { row.paid = nums[nums.length - 1].n; paidCur = lineCurrency(numberLine); }
         else if (lab === 'avg' && row.avg == null) {
-          row.avg = nums[nums.length - 1].n; avgCur = lineCurrency(line) || lineCurrency(lines[i + 1] || '');
+          row.avg = nums[nums.length - 1].n; avgCur = lineCurrency(numberLine);
           // Upbit: "0.01191111 BTC 매수평균가 125,947,579 KRW" — qty is on the same line before the symbol
           if (row.qty == null) {
             var reQ = new RegExp('([\\d.,]+)\\s*' + a.sym + '\\b|\\b' + a.sym + '\\s+([\\d.,]+)');
@@ -135,17 +139,12 @@
             // Upbit: same line may have avg price AFTER the symbol  "0.01191111 BTC 125,947,579 KRW"
             if (row.avg == null) {
               var symIdx = line.indexOf(a.sym);
-              if (symIdx !== -1) {
+              if (symIdx !== -1 && m.index < symIdx && lineCurrency(line)) {
                 var afterNums = numbersIn(line.slice(symIdx + a.sym.length));
                 if (afterNums.length) { row.avg = afterNums[0].n; avgCur = lineCurrency(line) || defaultCur; }
               }
             }
           }
-        }
-        else if (!lab && row.qty != null && row.paid == null && nums.length >= 2 && lineCurrency(line)) {
-          // Upbit: unlabeled line "[eval_value] KRW [paid] KRW" — rightmost number is paid
-          row.paid = nums[nums.length - 1].n;
-          paidCur = lineCurrency(line) || defaultCur;
         }
       }
       var cur = paidCur || defaultCur;
