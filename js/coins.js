@@ -53,7 +53,9 @@
     ['JST', 'just', 'JUST', '저스트', 0.13796],
     ['GT', 'gatechain-token', 'Gate', '게이트토큰', 9.59],
     ['KCS', 'kucoin-shares', 'KuCoin', '쿠코인', 7.07],
-    ['POL', 'polygon-ecosystem-token', 'POL (ex-MATIC)', '폴리곤', 0.090457]
+    ['POL', 'polygon-ecosystem-token', 'POL (ex-MATIC)', '폴리곤', 0.090457],
+    ['USDC', 'usd-coin', 'USD Coin', '유에스디코인', 1.0],
+    ['ZETA', 'zetachain', 'ZetaChain', '제타체인', 0.049]
   ];
 
   var bySymbol = {};

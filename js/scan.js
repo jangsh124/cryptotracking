@@ -130,7 +130,22 @@
           // "0.5 BTC" or "BTC 0.5": a number right next to the symbol is the quantity
           var re = new RegExp('([\\d.,]+)\\s*' + a.sym + '\\b|\\b' + a.sym + '\\s+([\\d.,]+)');
           var m = line.match(re);
-          if (m) row.qty = toNumber(m[1] || m[2]);
+          if (m) {
+            row.qty = toNumber(m[1] || m[2]);
+            // Upbit: same line may have avg price AFTER the symbol  "0.01191111 BTC 125,947,579 KRW"
+            if (row.avg == null) {
+              var symIdx = line.indexOf(a.sym);
+              if (symIdx !== -1) {
+                var afterNums = numbersIn(line.slice(symIdx + a.sym.length));
+                if (afterNums.length) { row.avg = afterNums[0].n; avgCur = lineCurrency(line) || defaultCur; }
+              }
+            }
+          }
+        }
+        else if (!lab && row.qty != null && row.paid == null && nums.length >= 2 && lineCurrency(line)) {
+          // Upbit: unlabeled line "[eval_value] KRW [paid] KRW" — rightmost number is paid
+          row.paid = nums[nums.length - 1].n;
+          paidCur = lineCurrency(line) || defaultCur;
         }
       }
       var cur = paidCur || defaultCur;
