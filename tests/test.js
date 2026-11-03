@@ -89,5 +89,19 @@ eq('OCR dots as commas', Scan.toNumber('1.500.176'), 1500176);
 
 var p4 = Scan.parseHoldings('비 트 코인 BTC\n보 유 수량 0.01523 BTC\n매 수 평균가 98,450,000 KRW\n매 수 금 액 1,499,400 KRW');
 eq('spaced Hangul labels (real OCR output)', p4.rows[0].paid.value, 1499400);
+// Upbit can place two values above their labels and repeat the ticker on detail lines.
+var paired = Scan.parseHoldings('비트코인 BTC\n0.01191111 BTC 125,947,579 KRW\n보유수량 매수평균가\n1,612,345 KRW 1,500,176 KRW\n평가금액 매수금액');
+eq('paired labels keep purchase cost numeric', paired.rows[0].paid.value, 1500176);
+eq('paired labels keep KRW', paired.rows[0].paid.currency, 'KRW');
+eq('repeated ticker retains quantity', paired.rows[0].qty, 0.01191111);
+var repeated = Scan.parseHoldings('BTC\nQuantity 0.25 BTC\nAverage cost $60,000\nBTC\nValue $17,500');
+eq('ticker repeats do not discard average cost', repeated.rows[0].paid.value, 15000);
+var unknown = Scan.parseHoldings('BTC 0.25\n$17,500 $2,500');
+eq('unlabeled market value and profit are not cost', unknown.rows[0].paid, null);
+var splitLabel = Scan.parseHoldings('BTC 0.25\nAverage cost\n60,000 KRW');
+eq('split label reads currency from number line', splitLabel.rows[0].paid.currency, 'KRW');
+eq('split label computes cost', splitLabel.rows[0].paid.value, 15000);
+var noQty = Scan.parseHoldings('BTC\nQuantity\nMarket value $17,500');
+eq('quantity does not borrow market value', noQty.rows[0].qty, null);
 console.log('\n' + passes + ' passed, ' + fails + ' failed');
 process.exit(fails ? 1 : 0);
